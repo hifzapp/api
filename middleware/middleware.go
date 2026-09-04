@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
@@ -26,6 +27,12 @@ func Protected() fiber.Handler {
 		}
 
 		tokenString := c.Cookies("token")
+
+		if tokenString == "" {
+			if authorization := c.Get("Authorization"); authorization != "" {
+				tokenString = strings.TrimPrefix(authorization, "Bearer ")
+			}
+		}
 
 		if tokenString == "" {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{

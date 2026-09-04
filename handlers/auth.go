@@ -288,6 +288,7 @@ func GoogleLogin(c fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"message": "Logged in successfully.",
 		"user":    userResponse,
+		"token":   tokenString,
 	})
 }
 
