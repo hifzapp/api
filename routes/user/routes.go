@@ -14,4 +14,5 @@ func RegisterRoutes(api fiber.Router) {
 	)
 
 	user.Post("/onboarding", handlers.CompleteOnboarding(config.DB))
+	user.Patch("/name", handlers.UpdateName(config.DB))
 }
