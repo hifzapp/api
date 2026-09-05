@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mohammed-ayoub-dz/hifz/config"
+	"github.com/mohammed-ayoub-dz/hifz/middleware"
 	"github.com/mohammed-ayoub-dz/hifz/models"
 	"google.golang.org/api/idtoken"
 	"gorm.io/gorm"
@@ -22,7 +23,8 @@ type GoogleAuthRequest struct {
 }
 
 type AuthClaims struct {
-	UserID uint `json:"user_id"`
+	UserID         uint `json:"user_id"`
+	SessionVersion int  `json:"session_version"`
 	jwt.RegisteredClaims
 }
 
@@ -53,7 +55,6 @@ func GoogleLogin(c fiber.Ctx) error {
 		})
 	}
 
-
 	googleClientID := strings.TrimSpace(
 		os.Getenv("GOOGLE_CLIENT_ID"),
 	)
@@ -83,7 +84,6 @@ func GoogleLogin(c fiber.Ctx) error {
 			"error": "Google token is invalid or expired.",
 		})
 	}
-
 
 	googleID := strings.TrimSpace(payload.Subject)
 
@@ -117,8 +117,6 @@ func GoogleLogin(c fiber.Ctx) error {
 		})
 	}
 
-	// 
-	
 	emailVerifiedClaim, ok := payload.Claims["email_verified"]
 
 	if !ok {
@@ -135,7 +133,6 @@ func GoogleLogin(c fiber.Ctx) error {
 		})
 	}
 
-
 	name := ""
 
 	if value, ok := payload.Claims["name"].(string); ok {
@@ -147,7 +144,6 @@ func GoogleLogin(c fiber.Ctx) error {
 	if value, ok := payload.Claims["picture"].(string); ok {
 		avatar = strings.TrimSpace(value)
 	}
-
 
 	var user models.User
 
@@ -206,7 +202,6 @@ func GoogleLogin(c fiber.Ctx) error {
 		})
 	}
 
-
 	now := time.Now()
 
 	tokenID, err := generateTokenID()
@@ -218,7 +213,8 @@ func GoogleLogin(c fiber.Ctx) error {
 	}
 
 	claims := AuthClaims{
-		UserID: user.ID,
+		UserID:         user.ID,
+		SessionVersion: user.SessionVersion,
 
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: "hifz-api",
@@ -256,8 +252,7 @@ func GoogleLogin(c fiber.Ctx) error {
 		})
 	}
 
-
-	isProd := isProduction();
+	isProd := isProduction()
 
 	sameSite := "Lax"
 
@@ -275,7 +270,6 @@ func GoogleLogin(c fiber.Ctx) error {
 		Path:     "/",
 	})
 
-
 	userResponse := AuthUserResponse{
 		ID:     user.ID,
 		Email:  user.Email,
@@ -292,10 +286,52 @@ func GoogleLogin(c fiber.Ctx) error {
 	})
 }
 
-func isProduction() bool {
-    return os.Getenv("APP_ENV") == "production"
+func Logout(c fiber.Ctx) error {
+	userID, ok := c.Locals(middleware.UserIDKey).(uint)
+	if !ok || userID == 0 {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Authentication required.",
+		})
+	}
+
+	var user models.User
+	if err := config.DB.First(&user, userID).Error; err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "User session not found.",
+		})
+	}
+
+	newVersion := user.SessionVersion + 1
+	if err := config.DB.Model(&user).Update("session_version", newVersion).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Unable to sign out across devices.",
+		})
+	}
+
+	isProd := isProduction()
+	sameSite := "Lax"
+	if isProd {
+		sameSite = "None"
+	}
+
+	c.Cookie(&fiber.Cookie{
+		Name:     "token",
+		Value:    "",
+		Expires:  time.Now().Add(-time.Hour),
+		HTTPOnly: true,
+		Secure:   isProd,
+		SameSite: sameSite,
+		Path:     "/",
+	})
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"message": "Logged out successfully.",
+	})
 }
 
+func isProduction() bool {
+	return os.Getenv("APP_ENV") == "production"
+}
 
 func generateTokenID() (string, error) {
 	var b [32]byte
@@ -306,4 +342,3 @@ func generateTokenID() (string, error) {
 
 	return hex.EncodeToString(b[:]), nil
 }
-

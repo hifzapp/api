@@ -7,12 +7,15 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mohammed-ayoub-dz/hifz/config"
+	"github.com/mohammed-ayoub-dz/hifz/models"
 )
 
 const UserIDKey = "user_id"
 
 type AuthClaims struct {
-	UserID uint `json:"user_id"`
+	UserID         uint `json:"user_id"`
+	SessionVersion int  `json:"session_version"`
 	jwt.RegisteredClaims
 }
 
@@ -63,6 +66,19 @@ func Protected() fiber.Handler {
 		if !ok || claims.UserID == 0 {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "Invalid authentication data.",
+			})
+		}
+
+		var user models.User
+		if err := config.DB.First(&user, claims.UserID).Error; err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "User session is no longer valid.",
+			})
+		}
+
+		if user.SessionVersion != claims.SessionVersion {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Your session has been invalidated.",
 			})
 		}
 
